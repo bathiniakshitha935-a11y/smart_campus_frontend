@@ -1,0 +1,21 @@
+.auth-box{max-width:520px;padding:24px;border:1px solid #e2e7ef;border-radius:15px;background:#f8faff;margin:24px 0}
+.auth-box h4,.crud h4{margin:8px 0 14px}
+.auth-form{display:flex!important;flex-direction:column;gap:12px!important;margin:0!important}
+.auth-form input,.suggestion-form input,.suggestion-form select,.suggestion-form textarea,.suggestion-card textarea{width:100%;padding:12px;border:1px solid #dce2eb;border-radius:9px;background:#fff;font:inherit}
+.text-button{border:0;background:transparent;color:#285bea;cursor:pointer;font:inherit;padding:8px}
+.account-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 18px;margin:20px 0;border-radius:12px;background:#f4f7fb}
+.account-bar button,.suggestion-actions button:not(.button){padding:10px 14px;border:1px solid #d8dee8;border-radius:8px;background:#fff;cursor:pointer}
+.subsection-title{margin-top:42px!important}
+.suggestion-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:18px 0}
+.suggestion-card{padding:18px;border:1px solid #e2e7ef;border-radius:13px;background:#fff;min-width:0}
+.suggestion-card>div:first-child{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.suggestion-card>div:first-child span:not(.status-pill),.suggestion-card small{display:block;color:#728098;font-size:12px;margin-top:6px}
+.suggestion-card p{color:#728098;line-height:1.5;margin:12px 0}
+.suggestion-card textarea{min-height:72px;resize:vertical;margin-top:10px}
+.suggestion-actions{display:flex;gap:8px;margin-top:12px}
+.status-pill{display:inline-block;border-radius:20px;padding:5px 10px;font-size:11px;font-weight:800;letter-spacing:.4px}
+.status-pill.pending{background:#fff3d6;color:#805500}.status-pill.approved{background:#e2f7ec;color:#176c3a}.status-pill.rejected{background:#fde8e7;color:#a6322b}
+.suggestion-form{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:20px 0!important}
+.suggestion-form textarea{min-height:92px;resize:vertical}
+.suggestion-form .button{justify-self:start}
+@media(max-width:800px){.suggestion-list,.suggestion-form{grid-template-columns:1fr}.account-bar{align-items:flex-start;flex-direction:column}}

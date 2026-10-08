@@ -1,6 +1,14 @@
 import React, { useEffect, useState } from "react";
 
-const API = import.meta.env.VITE_API_URL || "http://localhost:8080/api";
+const API = import.meta.env.VITE_API_URL;
+
+async function readResponse(response) {
+  const data = response.status === 204 ? null : await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(data?.message || `Request failed (${response.status})`);
+  }
+  return data;
+}
 
 const fallbackLocations = [
   { id: 1, name: "Main Entrance", type: "Entrance", description: "Main entrance opposite A Block." },
@@ -30,19 +38,67 @@ function App() {
   const [message, setMessage] = useState("");
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ name: "", type: "Block", description: "" });
+  const [token, setToken] = useState("");
+  const [user, setUser] = useState(null);
+  const [authMode, setAuthMode] = useState("login");
+  const [authForm, setAuthForm] = useState({ email: "", password: "" });
+  const [suggestionForm, setSuggestionForm] = useState({ kind: "ADD", existingLocationId: "", name: "", type: "Block", description: "" });
+  const [mySuggestions, setMySuggestions] = useState([]);
+  const [pendingSuggestions, setPendingSuggestions] = useState([]);
+  const [reviewNotes, setReviewNotes] = useState({});
+
+  const request = async (path, options = {}) => {
+    if (!API) throw new Error("VITE_API_URL is not configured for this deployment.");
+    const headers = { ...(options.headers || {}) };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    if (options.body) headers["Content-Type"] = "application/json";
+    const response = await fetch(`${API}${path}`, { ...options, headers });
+    return readResponse(response);
+  };
+
+  const signInOrRegister = async (e) => {
+    e.preventDefault();
+    try {
+      const session = await request(`/auth/${authMode === "register" ? "register" : "login"}`, {
+        method: "POST",
+        body: JSON.stringify(authForm)
+      });
+      setToken(session.token);
+      setUser({ email: session.email, role: session.role });
+      setAuthForm({ email: "", password: "" });
+      setMessage(authMode === "register" ? "Student account created." : "Signed in successfully.");
+    } catch (error) {
+      setMessage(error.message);
+    }
+  };
+
+  const signOut = () => {
+    setToken("");
+    setUser(null);
+    setMySuggestions([]);
+    setPendingSuggestions([]);
+    setEditing(null);
+    setMessage("Signed out.");
+  };
 
   const loadLocations = async () => {
     try {
-      const res = await fetch(`${API}/locations`);
-      if (!res.ok) throw new Error();
-      setLocations(await res.json());
+      setLocations(await request("/locations"));
       setMessage("Connected to Spring Boot backend.");
-    } catch {
-      setMessage("Backend is not running. Showing demo campus data.");
+    } catch (error) {
+      setMessage(error.message || "Backend is not running. Showing demo campus data.");
     }
   };
 
   useEffect(() => { loadLocations(); }, []);
+
+  useEffect(() => {
+    if (user?.role === "ADMIN") {
+      request("/admin/suggestions").then(setPendingSuggestions).catch(error => setMessage(error.message));
+    } else if (user?.role === "STUDENT") {
+      request("/suggestions/mine").then(setMySuggestions).catch(error => setMessage(error.message));
+    }
+  }, [user, token]);
 
   const findRoute = async () => {
     if (from === to) {
@@ -50,10 +106,7 @@ function App() {
       return;
     }
     try {
-      const res = await fetch(`${API}/routes?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      setRoute(data);
+      setRoute(await request(`/routes?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`));
     } catch {
       // Frontend demo fallback using known campus relationships.
       const graph = {
@@ -142,29 +195,56 @@ function App() {
   const saveLocation = async (e) => {
     e.preventDefault();
     try {
-      const url = editing ? `${API}/locations/${editing.id}` : `${API}/locations`;
-      const method = editing ? "PUT" : "POST";
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
+      await request(editing ? `/locations/${editing.id}` : "/locations", {
+        method: editing ? "PUT" : "POST",
         body: JSON.stringify(form)
       });
-      if (!res.ok) throw new Error();
       await loadLocations();
       setEditing(null);
       setForm({ name: "", type: "Block", description: "" });
-    } catch {
-      setMessage("Start the Spring Boot backend to use database CRUD.");
+      setMessage(editing ? "Location updated." : "Location added.");
+    } catch (error) {
+      setMessage(error.message);
     }
   };
 
   const deleteLocation = async (id) => {
     try {
-      const res = await fetch(`${API}/locations/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error();
+      await request(`/locations/${id}`, { method: "DELETE" });
       await loadLocations();
-    } catch {
-      setMessage("Start the Spring Boot backend to use database CRUD.");
+      setMessage("Location deleted.");
+    } catch (error) {
+      setMessage(error.message);
+    }
+  };
+
+  const submitSuggestion = async (e) => {
+    e.preventDefault();
+    try {
+      const payload = {
+        ...suggestionForm,
+        existingLocationId: suggestionForm.kind === "UPDATE" ? Number(suggestionForm.existingLocationId) : null
+      };
+      await request("/suggestions", { method: "POST", body: JSON.stringify(payload) });
+      setSuggestionForm({ kind: "ADD", existingLocationId: "", name: "", type: "Block", description: "" });
+      setMySuggestions(await request("/suggestions/mine"));
+      setMessage("Suggestion submitted for admin review.");
+    } catch (error) {
+      setMessage(error.message);
+    }
+  };
+
+  const reviewSuggestion = async (suggestion, decision) => {
+    try {
+      await request(`/admin/suggestions/${suggestion.id}/review`, {
+        method: "POST",
+        body: JSON.stringify({ decision, reviewNotes: reviewNotes[suggestion.id] || "" })
+      });
+      setPendingSuggestions(await request("/admin/suggestions"));
+      if (decision === "APPROVED") await loadLocations();
+      setMessage(`Suggestion ${decision.toLowerCase()}.`);
+    } catch (error) {
+      setMessage(error.message);
     }
   };
 
@@ -250,8 +330,32 @@ function App() {
 
         <section id="crud" className="panel crud">
           <span className="eyebrow">03 • CRUD</span>
-          <h3>Manage campus locations</h3>
-          <p className="muted">This section demonstrates Create, Read, Update and Delete operations through the Spring Boot API.</p>
+          <h3>Campus account &amp; management</h3>
+
+          {!user && <div className="auth-box">
+            <h4>{authMode === "register" ? "Create student account" : "Sign in"}</h4>
+            <form className="auth-form" onSubmit={signInOrRegister}>
+              <input type="email" autoComplete="email" placeholder="Email address" value={authForm.email}
+                onChange={e => setAuthForm({ ...authForm, email: e.target.value })} required />
+              <input type="password" autoComplete={authMode === "register" ? "new-password" : "current-password"}
+                placeholder={authMode === "register" ? "Password (at least 12 characters)" : "Password"}
+                value={authForm.password} minLength={authMode === "register" ? 12 : 1} maxLength={72}
+                onChange={e => setAuthForm({ ...authForm, password: e.target.value })} required />
+              <button className="button" type="submit">{authMode === "register" ? "Register as student" : "Sign in"}</button>
+              <button type="button" className="text-button" onClick={() => setAuthMode(authMode === "register" ? "login" : "register")}>
+                {authMode === "register" ? "Already registered? Sign in" : "New student? Create an account"}
+              </button>
+            </form>
+          </div>}
+
+          {user && <div className="account-bar">
+            <span>Signed in as <b>{user.email}</b> ({user.role.toLowerCase()})</span>
+            <button type="button" onClick={signOut}>Sign out</button>
+          </div>}
+
+          {user?.role === "ADMIN" && <>
+          <h4>Manage official campus locations</h4>
+          <p className="muted">Only administrators can change official campus data.</p>
 
           <form onSubmit={saveLocation}>
             <input placeholder="Location name" value={form.name} onChange={e => setForm({...form, name:e.target.value})} required />
@@ -274,6 +378,63 @@ function App() {
               </div>
             ))}
           </div>
+          <h4 className="subsection-title">Pending student suggestions</h4>
+          {pendingSuggestions.length === 0 && <p className="muted">No pending suggestions.</p>}
+          <div className="suggestion-list">
+            {pendingSuggestions.map(s => <article className="suggestion-card" key={s.id}>
+              <div><b>{s.kind === "ADD" ? "Add location" : "Update location"}: {s.name}</b><span>{s.type} · from {s.submittedBy}</span></div>
+              <p>{s.description || "No description provided."}</p>
+              {s.existingLocationId && <small>Existing location ID: {s.existingLocationId}</small>}
+              <textarea maxLength={500} placeholder="Optional review note" value={reviewNotes[s.id] || ""}
+                onChange={e => setReviewNotes({ ...reviewNotes, [s.id]: e.target.value })} />
+              <div className="suggestion-actions">
+                <button className="button" onClick={() => reviewSuggestion(s, "APPROVED")}>Approve</button>
+                <button onClick={() => reviewSuggestion(s, "REJECTED")}>Reject</button>
+              </div>
+            </article>)}
+          </div>
+          </>}
+
+          {user?.role === "STUDENT" && <>
+            <h4>Suggest a campus location change</h4>
+            <p className="muted">An administrator reviews suggestions before they change the official campus map.</p>
+            <form className="suggestion-form" onSubmit={submitSuggestion}>
+              <select value={suggestionForm.kind} onChange={e => setSuggestionForm({
+                ...suggestionForm, kind: e.target.value, existingLocationId: "", name: "", type: "Block", description: ""
+              })}>
+                <option value="ADD">Suggest a missing location</option>
+                <option value="UPDATE">Suggest a correction</option>
+              </select>
+              {suggestionForm.kind === "UPDATE" && <select required value={suggestionForm.existingLocationId}
+                onChange={e => {
+                  const selected = locations.find(location => String(location.id) === e.target.value);
+                  setSuggestionForm({ ...suggestionForm, existingLocationId: e.target.value,
+                    name: selected?.name || "", type: selected?.type || "Block", description: selected?.description || "" });
+                }}>
+                <option value="">Choose a location to correct</option>
+                {locations.filter(location => location.id).map(location => <option key={location.id} value={location.id}>{location.name}</option>)}
+              </select>}
+              <input placeholder="Location name" value={suggestionForm.name} maxLength={255}
+                onChange={e => setSuggestionForm({ ...suggestionForm, name: e.target.value })} required />
+              <select value={suggestionForm.type} onChange={e => setSuggestionForm({ ...suggestionForm, type: e.target.value })}>
+                <option>Block</option><option>Facility</option><option>Entrance</option>
+              </select>
+              <textarea placeholder="Describe the missing location or correction" value={suggestionForm.description} maxLength={255}
+                onChange={e => setSuggestionForm({ ...suggestionForm, description: e.target.value })} />
+              <button className="button" type="submit">Submit suggestion</button>
+            </form>
+            <h4 className="subsection-title">My suggestion status</h4>
+            {mySuggestions.length === 0 && <p className="muted">You have not submitted any suggestions.</p>}
+            <div className="suggestion-list">
+              {mySuggestions.map(s => <article className="suggestion-card" key={s.id}>
+                <div><b>{s.name}</b><span className={`status-pill ${s.status.toLowerCase()}`}>{s.status}</span></div>
+                <p>{s.kind === "ADD" ? "New location suggestion" : "Location correction"} · {s.type}</p>
+                {s.reviewNotes && <small>Admin note: {s.reviewNotes}</small>}
+              </article>)}
+            </div>
+          </>}
+
+          {!user && <p className="muted">Sign in as an administrator to manage official locations, or register as a student to submit suggestions.</p>}
           <p className="status">{message}</p>
         </section>
       </main>

@@ -1,0 +1,10 @@
+# Blueprint for deploying this standalone frontend repository on Render.
+services:
+  - type: web
+    name: smart-campus-frontend
+    runtime: static
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        sync: false
