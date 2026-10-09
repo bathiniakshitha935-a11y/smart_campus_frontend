@@ -1,6 +1,6 @@
 # Smart Campus Frontend
 
-React + Vite client for the Smart Campus map, navigation, admin location tools, and student suggestions.
+React + Vite client for the Smart Campus map and campus navigation.
 
 ## Local development
 
@@ -10,4 +10,4 @@ Run `npm install` and `npm run dev`. `.env.development` configures the local API
 
 The standalone Render Blueprint is `render.yaml`. It prompts for `VITE_API_URL` at deployment setup. Vercel uses the same build command (`npm run build`), output directory (`dist`), and environment variable. Do not place deployment URLs, secrets, or credentials in the source.
 
-Sign-in access tokens remain in memory for the current page session and are sent as bearer tokens to the API. Student registration always creates a student account; admin status is assigned and enforced by the backend.
+The campus map, location list, and route navigation are available from the home page.
